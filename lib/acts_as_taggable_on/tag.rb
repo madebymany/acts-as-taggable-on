@@ -17,19 +17,19 @@ module ActsAsTaggableOn
     ### SCOPES:
 
     def self.named(name)
-      where(["BINARY lower(name) = ?", name.downcase])
+      where(["lower(name) = lower(?)", name])
     end
 
     def self.named_any(list)
-      where(list.map { |tag| sanitize_sql(["BINARY lower(name) = ?", tag.to_s.downcase]) }.join(" OR "))
+      where(list.map { |tag| sanitize_sql(["lower(name) = lower(?)", tag]) }.join(" OR "))
     end
 
     def self.named_like(name)
-      where(["BINARY lower(name) = lower(?)", "%#{escape_like(name)}%"])
+      where(["lower(name) = lower(?)", "%#{escape_like(name)}%"])
     end
 
     def self.named_like_any(list)
-      where(list.map { |tag| sanitize_sql(["BINARY lower(name) = lower(?)", "%#{escape_like(tag.to_s)}%"]) }.join(" OR "))
+      where(list.map { |tag| sanitize_sql(["lower(name) = lower(?)", "%#{escape_like(tag.to_s)}%"]) }.join(" OR "))
     end
 
     ### CLASS METHODS:
@@ -42,15 +42,26 @@ module ActsAsTaggableOn
       list = [list].flatten
 
       return [] if list.empty?
+      
+      tags = []
+      
+      for tag in list
+        exists = Tag.named(tag).first
+        if exists
+          exists.name = tag
+          exists.save
+          tags << exists if !tags.map(&:id).include?(exists.id)
+        else
+          new_tag = Tag.create(:name => tag)
+          tags << new_tag
+        end
+      end
 
-      existing_tags = Tag.named_any(list).all
-      new_tag_names = list.reject do |name|
-                        name = comparable_name(name)
-                        existing_tags.any? { |tag| comparable_name(tag.name) == name }
-                      end
-      created_tags  = new_tag_names.map { |name| Tag.create(:name => name) }
+      tags.each do |tag|
+        tag.reload
+      end
 
-      existing_tags + created_tags
+      tags
     end
 
     ### INSTANCE METHODS:
